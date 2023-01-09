@@ -47,6 +47,12 @@ struct io_link {
 	int				flags;
 };
 
+struct io_getdents {
+	struct file			*file;
+	struct linux_dirent64 __user	*dirent;
+	unsigned int			count;
+};
+
 int io_renameat_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
 	struct io_rename *ren = io_kiocb_to_cmd(req, struct io_rename);
@@ -290,4 +296,40 @@ void io_link_cleanup(struct io_kiocb *req)
 
 	putname(sl->oldpath);
 	putname(sl->newpath);
+}
+
+int io_getdents_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
+{
+	struct io_getdents *getdents = io_kiocb_to_cmd(req, struct io_getdents);
+
+	if (sqe->off || sqe->rw_flags || sqe->buf_index || sqe->splice_fd_in)
+		return -EINVAL;
+
+	getdents->dirent = u64_to_user_ptr(READ_ONCE(sqe->addr));
+	getdents->count = READ_ONCE(sqe->len);
+
+	return 0;
+}
+
+int io_getdents(struct io_kiocb *req, unsigned int issue_flags)
+{
+	struct io_getdents *getdents = io_kiocb_to_cmd(req, struct io_getdents);
+	bool needs_pos_unlock = false;
+	int ret;
+
+	if (issue_flags & IO_URING_F_NONBLOCK)
+		return -EAGAIN;
+
+	if (req->file->f_mode & FMODE_ATOMIC_POS) {
+		needs_pos_unlock = true;
+		mutex_lock(&req->file->f_pos_lock);
+	}
+
+	ret = vfs_getdents(req->file, getdents->dirent, getdents->count);
+
+	if (needs_pos_unlock)
+		mutex_unlock(&req->file->f_pos_lock);
+
+	io_req_set_res(req, ret, 0);
+	return IOU_OK;
 }
