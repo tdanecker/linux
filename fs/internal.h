@@ -263,3 +263,11 @@ ssize_t __kernel_write_iter(struct file *file, struct iov_iter *from, loff_t *po
  */
 int setattr_should_drop_sgid(struct user_namespace *mnt_userns,
 			     const struct inode *inode);
+
+/*
+ * fs/readdir.c
+ */
+struct linux_dirent64;
+
+int vfs_getdents(struct file *file, struct linux_dirent64 __user *dirent,
+		 unsigned int count);
